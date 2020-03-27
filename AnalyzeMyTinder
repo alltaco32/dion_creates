@@ -42,6 +42,7 @@ class color:
    UNDERLINE = '\033[4m'
    END = '\033[0m'
    
+   
 ## Parse through raw data, and convert raw messages as Message Class, and store in a dictionary ##
 ## where key is match number ##
 
@@ -57,7 +58,7 @@ def store_messages(data):
         message_dict[match_id]=sent
     return message_dict
     
- ## Parse through message dict, and give a word, time, day, date, emoji, day count; store in a dictionary ##
+## Parse through message dict, and give a word, time, day, date, emoji, day count; store in a dictionary ##
 
 def parse_messages(message_dict):
     word_count = {}
@@ -115,8 +116,9 @@ def parse_messages(message_dict):
                   'emoji':emoji_count,\
                   'word_ct':word_ct}
     
-  return parsed_dict
-
+    return parsed_dict
+    
+    
 ## implementation of insertion sort ##
 
 def insert(lst, index):
@@ -135,7 +137,8 @@ def freq_words(data):
         insert(lst, index)
     return lst
     
- ## Now, sort the parsed value counts by frequency ##
+    
+## Now, sort the parsed value counts by frequency ##
 
 def sort_val(parsed, stop_words):
     stop_words=pd.read_csv('{}.csv'.format(stop_words), header=None) #a file containing common stop words
@@ -148,9 +151,9 @@ def sort_val(parsed, stop_words):
             sorted_vals[x] = list(filter(lambda x: x[0] not in stop_words.union(set(emojis)), sorted_tuple))
         else:
             sorted_vals[x]=sorted_tuple
-  return sorted_vals
+    return sorted_vals
     
- ## Some words have common aliases; for example 'bubbletea' can be represented as bbt, bubble tea, boba ##
+## Some words have common aliases; for example 'bubbletea' can be represented as bbt, bubble tea, boba ##
 
 def find_key(dictionary, val):
     for x in dictionary.items():
@@ -176,15 +179,15 @@ def group_words(lst_tuples, alias_dict):
         else:
             grouped.append(x)
     grouped = grouped + [x for x in temp_dict.items()]
-  return freq_words(grouped)   
-
+    return freq_words(grouped)
+    
 # Get tenure of match messages; using first and last message sent as proxy for conversation length #
 
 month_dict = {'Jan':1, 'Feb':2, 'Mar': 3, 'Apr':4,
              'May':5, 'Jun':6, 'Jul':7, 'Aug':8,
              'Sep':9, 'Oct':10, 'Nov':11, 'Dec': 12}
 
-def get_tenure(message_dict):
+def get_tenure(msg_dict):
     
     tenure = {}
     for x in msg_dict:
@@ -197,17 +200,20 @@ def get_tenure(message_dict):
             end = date(int(dt[-1]), month_dict[dt[1]], int(dt[0]))
             tenure[x] = (end - start).days
             
-     return tenure
-
-def countfrequency(lst):  
+    return tenure
+    
+    
+    
+def countfrequency(my_list):  
     freq = {} 
-    for item in lst: 
+    for item in my_list: 
         if (item in freq): 
             freq[item] += 1
         else: 
             freq[item] = 1
   
     return freq
+    
     
 def conversations(msg_dict):
     conversations_time = {}
@@ -222,7 +228,8 @@ def conversations(msg_dict):
             
     return conversations_time
     
- common_aliases = {'instagram':['instagram','insta','ig','instaa','dionbanno', '@dionbanno', 'dm'],
+
+common_aliases = {'instagram':['instagram','insta','ig','instaa','dionbanno', '@dionbanno', 'dm'],
                   'bubbletea':['boba','bbt','bobaa','bubbletea', 'bubble', 'tea','bbtt','coco',\
                                'alley', 'matcha', 'taro','bobba', 'gongcha'],
                   'hey':['heyy','heyyy','heyo','heyoo','hello','hi','hey','hii'],
@@ -233,6 +240,7 @@ def conversations(msg_dict):
                   'statistics':['stats', 'statistics', 'data', 'math'],
                   'okay':['ok', 'okay', 'okk', 'okiee', 'k', 'okayy']
                  }
+                 
                  
 def analyze_my_tinder(json_filename):
     alias_dict = common_aliases
@@ -247,12 +255,11 @@ def analyze_my_tinder(json_filename):
         if message_data[x]!= []:
             msg_dict[x] = message_data[x]
     
-    
     parsed_data = parse_messages(msg_dict)
     sorted_dict = sort_val(parsed_data, 'stop_words')
     grouped = group_words(sorted_dict['word'],common_aliases)
     match_tenure = conversations(msg_dict)
-    msg_tenure = freq_words(CountFrequency(list(get_tenure(msg_dict).values())))
+    msg_tenure = freq_words(countfrequency(list(get_tenure(msg_dict).values())))
 
     gmt_to_et = {'00:00': '20:00',
             '01:00':'21:00',
@@ -434,4 +441,7 @@ def analyze_my_tinder(json_filename):
     print('\n')
     print('\n')
     
-    analyze_my_tinder('data')
+    
+    
+analyze_my_tinder('data')
+    
