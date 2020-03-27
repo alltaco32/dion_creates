@@ -1,0 +1,437 @@
+import pandas as pd
+import numpy as np
+import string
+import json
+import emoji
+from datetime import *
+from emoji import UNICODE_EMOJI
+import matplotlib.pyplot as plt
+import seaborn as sns
+from emoji import UNICODE_EMOJI
+from wordcloud import WordCloud, STOPWORDS 
+
+emojis = [x for x in UNICODE_EMOJI]
+
+class Message:
+    '''Fields: Text (Str)
+               Date (Datetime)'''
+    
+    def __init__(self, text, date):
+        self.text = text
+        self.date = date
+    
+    def __repr__(self):
+        message_rep = "{}: {}"
+        return message_rep.format(self.date, self.text)
+        
+    def __eq__(self, other):
+        if isinstance(other,Message):
+            return self.text == other.text and self.date == other.date
+        else:
+            return False
+        
+class color:
+   PURPLE = '\033[95m'
+   CYAN = '\033[96m'
+   DARKCYAN = '\033[36m'
+   BLUE = '\033[94m'
+   GREEN = '\033[92m'
+   YELLOW = '\033[93m'
+   RED = '\033[91m'
+   BOLD = '\033[1m'
+   UNDERLINE = '\033[4m'
+   END = '\033[0m'
+   
+## Parse through raw data, and convert raw messages as Message Class, and store in a dictionary ##
+## where key is match number ##
+
+def store_messages(data):
+    message_dict={}
+
+    for x in data['Messages']:
+        match_id=x['match_id'].split()[-1]
+        sent = []
+        for messages in x['messages']:
+            sent_date = " ".join(messages['sent_date'].split()[0:-1])[:-3]
+            sent.append(Message(messages['message'].lower(),sent_date))
+        message_dict[match_id]=sent
+    return message_dict
+    
+ ## Parse through message dict, and give a word, time, day, date, emoji, day count; store in a dictionary ##
+
+def parse_messages(message_dict):
+    word_count = {}
+    time_count = {}
+    day_count = {}
+    date_count = {}
+    emoji_count = {}
+    word_ct={}
+    day_time = {}
+    for matches in message_dict:
+        messages = message_dict[matches]
+        for msg in messages:
+            date=msg.date.split(" ")
+            day=date[0][:-1]
+            time = date[-1][:2]+':00'
+            dt="-".join(date[1:4])
+            words=msg.text.split(" ")
+            word_length = len(words)
+            check_lst = [[day, day_count], [time, time_count],[day+time, day_time],\
+                         [dt, date_count], [word_length, word_ct], [words, word_count]]
+            i=0
+            while i < 5:
+                x=check_lst[i]
+                key=x[0]
+                dictionary = x[1]
+                if key not in dictionary.keys():
+                    dictionary[key]=1
+                    i=i+1
+                else:
+                    dictionary[key]=dictionary[key]+1
+                    i=i+1
+
+            for x in words:
+                t = str.maketrans(dict.fromkeys(string.punctuation))
+                x = x.translate(t)
+                stripped = list(x)
+                for char in stripped:
+                    if char in emojis:
+                        if char not in emoji_count.keys():
+                            emoji_count[char]=1
+                        else:
+                            emoji_count[char]=emoji_count[char]+1
+                if len(x)>3 and x[-3:]=='ing':
+                    x=x[:-3]
+                if x not in word_count.keys():
+                    word_count[x]=1
+                else:
+                    word_count[x]=word_count[x]+1
+                    
+    parsed_dict = {'day':day_count,\
+                  'time': time_count,\
+                  'day_time': day_time,\
+                  'date': date_count,\
+                  'word': word_count,\
+                  'emoji':emoji_count,\
+                  'word_ct':word_ct}
+    
+  return parsed_dict
+
+## implementation of insertion sort ##
+
+def insert(lst, index):
+    while index > 0 and lst[index][1] > lst[index-1][1]:
+        current = lst[index]
+        lst[index] = lst[index-1]
+        lst[index-1] = current
+        index = index-1
+
+def freq_words(data):
+    if type(data) == type([]):
+        lst = data
+    else:
+        lst = list(data.items())
+    for index in range(1, len(lst)):
+        insert(lst, index)
+    return lst
+    
+ ## Now, sort the parsed value counts by frequency ##
+
+def sort_val(parsed, stop_words):
+    stop_words=pd.read_csv('{}.csv'.format(stop_words), header=None) #a file containing common stop words
+    stop_words=set(stop_words[0].unique())
+
+    sorted_vals = {}
+    for x in parsed.keys():
+        sorted_tuple = freq_words(parsed[x])
+        if x=='word':
+            sorted_vals[x] = list(filter(lambda x: x[0] not in stop_words.union(set(emojis)), sorted_tuple))
+        else:
+            sorted_vals[x]=sorted_tuple
+  return sorted_vals
+    
+ ## Some words have common aliases; for example 'bubbletea' can be represented as bbt, bubble tea, boba ##
+
+def find_key(dictionary, val):
+    for x in dictionary.items():
+        if val in x[1]:
+            return x[0]
+        
+def group_words(lst_tuples, alias_dict):
+    alias = []
+    for x in alias_dict.keys():
+        alias = alias + common_aliases[x]
+    alias=set(alias)
+    grouped = []
+    temp_dict = {}
+    for x in lst_tuples:
+        if x[0] in alias and x[0] not in set(temp_dict.keys()):
+            key = find_key(alias_dict, x[0])
+            if key in set(temp_dict.keys()):
+                temp_dict[key] = temp_dict[key] + x[1]
+            else:
+                temp_dict[key] = x[1]
+        elif x[0] in alias:
+            temp_dict[x[0]] = temp_dict[x[0]] + x[1]
+        else:
+            grouped.append(x)
+    grouped = grouped + [x for x in temp_dict.items()]
+  return freq_words(grouped)   
+
+# Get tenure of match messages; using first and last message sent as proxy for conversation length #
+
+month_dict = {'Jan':1, 'Feb':2, 'Mar': 3, 'Apr':4,
+             'May':5, 'Jun':6, 'Jul':7, 'Aug':8,
+             'Sep':9, 'Oct':10, 'Nov':11, 'Dec': 12}
+
+def get_tenure(message_dict):
+    
+    tenure = {}
+    for x in msg_dict:
+        if len(msg_dict[x])==1:
+            tenure[x] = 1
+        else:
+            dt = msg_dict[x][1].date.split(" ")[1:4]
+            start = date(int(dt[-1]), month_dict[dt[1]], int(dt[0]))
+            dt = msg_dict[x][-1].date.split(" ")[1:4]
+            end = date(int(dt[-1]), month_dict[dt[1]], int(dt[0]))
+            tenure[x] = (end - start).days
+            
+     return tenure
+
+def countfrequency(lst):  
+    freq = {} 
+    for item in lst: 
+        if (item in freq): 
+            freq[item] += 1
+        else: 
+            freq[item] = 1
+  
+    return freq
+    
+def conversations(msg_dict):
+    conversations_time = {}
+    for x in msg_dict:
+        if len(msg_dict[x])!=1:
+            #return '-'.join(msg_dict[x][0].date.split(' ')[1:4])
+            start = '-'.join(msg_dict[x][0].date.split(' ')[1:4])
+            end = '-'.join(msg_dict[x][-1].date.split(' ')[1:4])
+            conversations_time[x] = [start, end]
+        else:
+            conversations_time
+            
+    return conversations_time
+    
+ common_aliases = {'instagram':['instagram','insta','ig','instaa','dionbanno', '@dionbanno', 'dm'],
+                  'bubbletea':['boba','bbt','bobaa','bubbletea', 'bubble', 'tea','bbtt','coco',\
+                               'alley', 'matcha', 'taro','bobba', 'gongcha'],
+                  'hey':['heyy','heyyy','heyo','heyoo','hello','hi','hey','hii'],
+                  'cute':['cute','cutie','cutee','cutiee'],
+                  'damn':['damn', 'dang', 'darn'],
+                  'netflix':['movie', 'tv', 'watch', 'series', 'movies', 'watching', 'netflix', 'shows'],
+                  'dates':['date', 'drinks', 'drink', 'go', 'dates'],
+                  'statistics':['stats', 'statistics', 'data', 'math'],
+                  'okay':['ok', 'okay', 'okk', 'okiee', 'k', 'okayy']
+                 }
+                 
+def analyze_my_tinder(json_filename):
+    alias_dict = common_aliases
+    with open('{}.json'.format(json_filename)) as json_file:
+        data = json.load(json_file)
+    
+    
+    message_data = store_messages(data)
+    
+    msg_dict = {}
+    for x in message_data.keys():
+        if message_data[x]!= []:
+            msg_dict[x] = message_data[x]
+    
+    
+    parsed_data = parse_messages(msg_dict)
+    sorted_dict = sort_val(parsed_data, 'stop_words')
+    grouped = group_words(sorted_dict['word'],common_aliases)
+    match_tenure = conversations(msg_dict)
+    msg_tenure = freq_words(CountFrequency(list(get_tenure(msg_dict).values())))
+
+    gmt_to_et = {'00:00': '20:00',
+            '01:00':'21:00',
+            '02:00': '22:00',
+            '03:00': '23:00',
+            '04:00': '00:00',
+            '05:00': '01:00',
+            '06:00': '02:00',
+            '07:00': '03:00',
+            '08:00': '04:00',
+            '09:00': '05:00',
+            '10:00': '06:00',
+            '11:00': '07:00',
+            '12:00': '08:00',
+            '13:00': '09:00',
+            '14:00': '10:00',
+            '15:00': '11:00',
+            '16:00': '12:00',
+            '17:00': '13:00',
+            '18:00': '14:00',
+            '19:00': '15:00',
+            '20:00': '16:00',
+            '21:00': '17:00',
+            '22:00': '18:00',
+            '23:00': '19:00'}
+    
+    s = {}
+    for x in sorted_dict['time']:
+        s[gmt_to_et[x[0]]]=x[1]
+    
+    sorted_dict['time']=s.items()
+    
+    lst = ['app_opens', 'swipes_likes', 'swipes_passes', 'matches','messages_sent','messages_received']
+    monthly_dict={}
+    for measures in lst:
+        monthly_dict[measures] = {}
+        for x in data['Usage'][measures].items():
+            month = x[0][:7] + '-01'
+            if month in monthly_dict[measures].keys():
+                monthly_dict[measures][month] = monthly_dict[measures][month] + x[1]
+            else:
+                monthly_dict[measures][month]=x[1]
+    
+    measure_dict = {}
+    measure_dict['date']=[x for x in monthly_dict['swipes_likes'].keys()]
+    for measures in monthly_dict.keys():
+        measure_dict[measures] = [x[1] for x in monthly_dict[measures].items()]
+    
+    df=pd.DataFrame.from_dict(measure_dict)
+    df['like_proportion'] = df['swipes_likes']/(df['swipes_passes']+df['swipes_likes'])
+    df['message_response_ratio'] = df['messages_sent']/df['messages_received']
+    row_number = len(df)
+    df.at[row_number, 'date'] = 'Total'
+    df.at[row_number+1, 'date'] = 'Max'
+    for x in lst:
+        #if x in lst:
+        sum_row = sum(df[x][:row_number])
+        df.at[row_number, x] = int(sum_row)
+        df.at[row_number+1, x] = int(max(df[x][:row_number]))
+    df.at[row_number, 'like_proportion'] = round(sum(df['swipes_likes'])/sum(df['swipes_likes']+df['swipes_passes']),3)
+    df.at[row_number, 'message_response_ratio'] = round(sum(df['messages_sent'])/sum(df['messages_received']),3)
+    df.fillna(' ',inplace=True)
+    df2=df[:row_number]
+    
+    print(color.BOLD + "{}'s Tinder Overview:".format(data['User']['name']) + color.END)
+    print('\n')
+    print('{}'.format(data['User']['bio']))
+    print('\n')
+    print(color.BOLD+'Tinder data as of {}'.format(data['User']['active_time'][:10]))
+    print(color.BOLD+'Created account: '+color.END +'{}'.format(data['User']['create_date'][:10]))
+    print(color.BOLD+'Age Filter: '+color.END + '{} to {}'.format(str(data['User']['age_filter_min']),\
+                                                                  str(data['User']['age_filter_max'])))
+    print(color.BOLD+'Interested in: '+color.END  +'{}'.format(data['User']['interested_in']))
+    print('\n')
+    print(color.UNDERLINE+'Tinder Stats: '+color.END)
+    for x in lst:
+        print(color.BOLD+x+color.END)
+        print('Total: {}'.format(str(int(df.at[row_number, x]))))
+        l = freq_words(list(data['Usage'][x].items()))
+        max_measure = l[0][1]
+        print('Daily Max: {}'.format(str(int(max_measure))))
+        max_lst = list(filter(lambda x: int(x[1])==int(max_measure),l))
+        
+        print('Dates with Maximum {}: {}'.format(x,str(max_lst)))
+        print('\n')
+        
+    print(color.UNDERLINE+'Your Top Words: '+color.END)
+    for x in grouped[:15]:
+        print(color.BOLD+x[0]+color.END + ' - ' +'{}'.format(str(x[1])))
+        
+    #Print word cloud#
+    s={}
+    for x in grouped:
+        s[x[0]]=x[1]
+
+    wordcloud = WordCloud(background_color='black')
+    wordcloud.generate_from_frequencies(frequencies=s)
+    plt.figure(figsize=(14,7))
+    plt.imshow(wordcloud, interpolation="bilinear")
+    plt.title("{}'s Word Cloud".format(data['User']['name']), fontsize=16)
+    plt.axis("off")
+    plt.show()
+    plt.savefig('WordCloud.png')
+    print('\n')
+    
+    s = sorted_dict['emoji'][:15]
+    print(color.UNDERLINE+'Your Top Emojis:'+color.END)
+    for x in s:
+        if x[0] not in ['🏼', '🏻']:
+            print(x[0] + color.BOLD+'-'+color.END+ ' {}'.format(str(x[1])))
+    print('\n')
+    
+    print(color.BOLD + color.UNDERLINE+'Your Monthly Activity:'+color.END)
+    print('\n')
+    
+    
+    print(color.BOLD+'Swipe Trends'+color.END)
+    plt.figure(figsize=(20,12))
+    ax1=plt.subplot(1,1,1)
+    ax1.plot(df2.date, df2.swipes_passes, 'o-',color='red', label='passes')
+    ax1.plot(df2.date, df2.swipes_likes, 'o--', color='green', label='likes')
+    ax1.set_xlabel('Month', fontsize=16)
+    ax1.set_ylabel('Swipe Trend', fontsize=16)
+    plt.title('Swipes: Passes versus Likes', fontsize=16)
+    plt.legend(fontsize=14)
+    plt.show()
+    plt.savefig('SwipeTrend.png')
+    print('\n')
+    print('\n')
+    
+    df2['match_rate'] = df2['matches']/(df2['swipes_likes'])
+    print(color.BOLD+'Match Trend'+color.END)
+    plt.figure(figsize=(20,12))
+    ax1=plt.subplot(1,1,1)
+    ax1.bar(df2.date,df2.matches, color='lightsteelblue')
+    ax1.set_ylabel('Monthly Matches', fontsize=16)
+    ax2=ax1.twinx()
+    ax2.plot(df2.date, df2.match_rate, 'o-.',color='palevioletred')
+    ax2.set_ylabel('Match Rate', fontsize=16)
+    ax1.set_xlabel('Months', fontsize=16)
+    plt.title('Matches', fontsize=16)
+    plt.show()
+    plt.savefig('MatchestoLikeRatio.png')
+    print('\n')
+    print('\n')
+    
+    
+    print(color.BOLD+'Messages Trend'+color.END)
+    plt.figure(figsize=(20,12))
+    ax1=plt.subplot(1,1,1)
+    ax1.plot(df2.date, df2.messages_sent, 'o-',color='steelblue', label='messages sent')
+    ax1.plot(df2.date, df2.messages_received, 'o--', color='slategrey', label='messages received')
+    ax1.set_xlabel('Month', fontsize=16)
+    ax1.set_ylabel('Messages', fontsize=16)
+    plt.title('Messages: Sent and Received', fontsize=16)
+    plt.legend(fontsize=14)
+    plt.show()
+    print('\n')
+    print('\n')
+    
+    
+    fig = plt.figure(figsize=(20,10))
+    plt.subplot(1, 2, 2)
+    x,y = zip(*sorted_dict['word_ct'])
+    ax=plt.scatter(x, y)
+    plt.xlabel('Message Length', fontsize=16)
+    plt.ylabel('Frequency', fontsize=16)
+    plt.title('Word Count Distribution')
+    plt.show()
+    print('\n')
+    print('\n')
+    
+    print(color.BOLD+'Activity Trend'+color.END)
+    p = pd.DataFrame(sorted_dict['time'], columns=['time', 'messages sent'])
+    p.sort_values(['time'],ascending=False, inplace=True)
+    plt.subplots(figsize=(10, 10))
+    sns.heatmap(p.set_index(['time'], drop=True))
+    plt.show()
+    print('\n')
+    print('\n')
+    
+    analyze_my_tinder('data')
